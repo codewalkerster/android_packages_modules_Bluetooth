@@ -882,9 +882,11 @@ void BTM_BleAdvFilterParamSetup(
       len = BTM_BLE_ADV_FILT_META_HDR_LENGTH + BTM_BLE_ADV_FILT_FEAT_SELN_LEN +
             BTM_BLE_ADV_FILT_TRACK_NUM;
 
+#if (BLE_ADV_FILTER == TRUE)
     btu_hcif_send_cmd_with_cb(
         FROM_HERE, HCI_BLE_ADV_FILTER, param, len,
         base::Bind(&btm_flt_update_cb, BTM_BLE_META_PF_FEAT_SEL, cb));
+#endif
   } else if (BTM_BLE_SCAN_COND_DELETE == action) {
     /* select feature based on control block settings */
     UINT8_TO_STREAM(p, BTM_BLE_META_PF_FEAT_SEL);
@@ -892,6 +894,7 @@ void BTM_BleAdvFilterParamSetup(
     /* Filter index */
     UINT8_TO_STREAM(p, filt_index);
 
+#if (BLE_ADV_FILTER == TRUE)
     btu_hcif_send_cmd_with_cb(
         FROM_HERE, HCI_BLE_ADV_FILTER, param,
         (uint8_t)(BTM_BLE_ADV_FILT_META_HDR_LENGTH),
@@ -914,7 +917,7 @@ void BTM_BleAdvFilterParamSetup(
       }
       remove_me_later_map.erase(filt_index);
     }
-
+#endif
   } else if (BTM_BLE_SCAN_COND_CLEAR == action) {
     /* Deallocate all filters here */
     btm_ble_dealloc_addr_filter_counter(NULL, BTM_BLE_PF_TYPE_ALL);
