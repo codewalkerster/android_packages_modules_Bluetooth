@@ -1146,10 +1146,12 @@ tBTM_STATUS BTM_SetLinkSuperTout(const RawAddress& remote_bda,
       return BTM_MODE_UNSUPPORTED;
     }
     p_acl->link_super_tout = timeout;
+#if (SUPERVISION_TIMEOUT == TRUE)
     btsnd_hcic_write_link_super_tout(p_acl->hci_handle, timeout);
     LOG_DEBUG("Set supervision timeout:%.2fms bd_addr:%s",
               supervision_timeout_to_seconds(timeout),
               PRIVATE_ADDRESS(remote_bda));
+#endif
     return BTM_CMD_STARTED;
   } else {
     LOG_WARN(
