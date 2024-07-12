@@ -25,11 +25,19 @@
 #include "hci/hci_layer.h"
 #include "hci_controller_generated.h"
 #include "os/metrics.h"
+#include "os/system_properties.h"
 
 namespace bluetooth {
 namespace hci {
 
+constexpr bool kDefaultVendorCapabilitiesEnabled = true;
+static const std::string kPropertyVendorCapabilitiesEnabled =
+    "bluetooth.core.le.vendor_capabilities.enabled";
+
 using os::Handler;
+
+static constexpr uint64_t kCsrLeEventMask = 0x000000000000001f;
+const std::string kBtCsrProperty = "persist.bluetooth.hci.csr";
 
 struct Controller::impl {
   impl(Controller& module) : module_(module) {}
@@ -40,7 +48,11 @@ struct Controller::impl {
     hci_->RegisterEventHandler(
         EventCode::NUMBER_OF_COMPLETED_PACKETS, handler->BindOn(this, &Controller::impl::NumberOfCompletedPackets));
 
-    le_set_event_mask(kDefaultLeEventMask);
+    if (os::GetSystemProperty(kBtCsrProperty) == "true") {
+        le_set_event_mask(kCsrLeEventMask);
+    } else {
+        le_set_event_mask(kDefaultLeEventMask);
+    }
     set_event_mask(kDefaultEventMask);
     write_le_host_support(Enable::ENABLED, Enable::DISABLED);
     hci_->EnqueueCommand(ReadLocalNameBuilder::Create(),
@@ -154,8 +166,15 @@ struct Controller::impl {
           handler->BindOnceOn(this, &Controller::impl::le_set_host_feature_handler));
     }
 
-    hci_->EnqueueCommand(LeGetVendorCapabilitiesBuilder::Create(),
-                         handler->BindOnceOn(this, &Controller::impl::le_get_vendor_capabilities_handler));
+    // Skip vendor capabilities check if configured.
+    if (os::GetSystemPropertyBool(
+            kPropertyVendorCapabilitiesEnabled, kDefaultVendorCapabilitiesEnabled)) {
+      hci_->EnqueueCommand(
+          LeGetVendorCapabilitiesBuilder::Create(),
+          handler->BindOnceOn(this, &Controller::impl::le_get_vendor_capabilities_handler));
+    } else {
+      vendor_capabilities_.is_supported_ = 0x00;
+    }
 
     // We only need to synchronize the last read. Make BD_ADDR to be the last one.
     std::promise<void> promise;
@@ -548,7 +567,17 @@ struct Controller::impl {
   void le_set_event_mask(uint64_t le_event_mask) {
     std::unique_ptr<LeSetEventMaskBuilder> packet = LeSetEventMaskBuilder::Create(le_event_mask);
     hci_->EnqueueCommand(std::move(packet), module_.GetHandler()->BindOnceOn(
-                                                this, &Controller::impl::check_status<LeSetEventMaskCompleteView>));
+                                                this, &Controller::impl::check_le_set_event_mask_status));
+  }
+
+  void check_le_set_event_mask_status(CommandCompleteView view) {
+    ASSERT(view.IsValid());
+    auto status_view = LeSetEventMaskCompleteView::Create(view);
+    ASSERT(status_view.IsValid());
+    auto status = status_view.GetStatus();
+    if (status != ErrorCode::SUCCESS) {
+      LOG_WARN("Unexpected return status %s", ErrorCodeText(status).c_str());
+    }
   }
 
   template <class T>
